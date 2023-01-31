@@ -13,15 +13,6 @@ type Consumer struct {
 	wg sync.WaitGroup
 }
 
-type SpikeConsumer struct {
-	active *chan int
-	done *chan bool
-	RPS *int
-	wg sync.WaitGroup
-}
-
-type ConsumerFunction func(int, int)(error)
-
 var (
 	AverageTimeForBatch time.Duration
 	TotalReq int = 0
@@ -35,28 +26,8 @@ func NewConsumer(active *chan int) *Consumer {
 	return &Consumer{active: active}
 }
 
-// NewConsumer creates a Consumer
-func NewConsumer2(active *chan int) *SpikeConsumer{
-	TotalReq, TotalFailedReq, TotalPassedReq = 0 , 0, 0
-	return &SpikeConsumer{active: active}
-}
-
-
-
 // consume reads the msgs channel
-func (c *SpikeConsumer) Consume2(runner ConsumerFunction, Batches int,  monitoringURL string, sendMetrics bool) {
-	c.wg = sync.WaitGroup{}
-	log.Println("consume: Started")
-	for {
-		t := c.CommonConsume2(2, runner, Batches, monitoringURL, sendMetrics)
-		if sendMetrics{
-			utils.SendTotal(float64(t), utils.GetPath(monitoringURL,"updateTotal"))
-		}
-	}
-}
-
-// consume reads the msgs channel
-func (c *Consumer) Consume(RPS int, runner ConsumerFunction, Batches int,  monitoringURL string, sendMetrics bool) {
+func (c *Consumer) Consume(RPS int, runner utils.RunnerFunction, Batches int,  monitoringURL string, sendMetrics bool) {
 	c.wg = sync.WaitGroup{}
 	log.Println("consume: Started")
 	for {
@@ -67,45 +38,8 @@ func (c *Consumer) Consume(RPS int, runner ConsumerFunction, Batches int,  monit
 	}
 }
 
-func RunnerWrap(TotalFailedReq *int , TotalPassedReq *int , runner ConsumerFunction, RPS int , i ...int) (int) {
-	err := runner(i[0], i[1])
-	if err != nil {
-		*TotalFailedReq += 1
-		return RPS - 2
-	}
-	*TotalPassedReq += 1
-	return RPS + 2
-}
 
-
-func (c *SpikeConsumer) CommonConsume2(minRPS int, runner ConsumerFunction, Batches int,  monitoringURL string, sendMetrics bool) int {
-	active_thread := <-*c.active
-    
-	active_RPS := minRPS
-
-	*c.RPS = active_RPS
-	
-	log.Println("consume: Received:", active_thread, "RPS", active_RPS)
-	startTime := time.Now()
-	for j := 0; j<active_RPS; j++ {
-		c.wg.Add(1)
-		go func(id int){
-			
-			TotalReq += 1
-			active_RPS = RunnerWrap(&TotalFailedReq, &TotalPassedReq, runner, active_RPS, id, active_thread)
-		
-		}(j)
-		c.wg.Done()
-		time.Sleep(time.Microsecond * 15)
-	}
-	Endtime := time.Since(startTime)
-	AverageTimeForBatch += Endtime
-	c.wg.Wait()
-	//metricsPrinter(active_thread,Batches,Endtime,AverageTimeForBatch,TotalReq,TotalPassedReq,TotalFailedReq,monitoringURL, sendMetrics)
-	return TotalReq
-}
-
-func (c *Consumer) CommonConsume(RPS int, runner ConsumerFunction, Batches int,  monitoringURL string, sendMetrics bool) int {
+func (c *Consumer) CommonConsume(RPS int, runner utils.RunnerFunction , Batches int,  monitoringURL string, sendMetrics bool) int {
 	active_thread := <-*c.active
 	log.Println("consume: Received:", active_thread)
 	startTime := time.Now()
@@ -113,7 +47,7 @@ func (c *Consumer) CommonConsume(RPS int, runner ConsumerFunction, Batches int, 
 		c.wg.Add(1)
 		go func(id int){
 			TotalReq += 1
-			err := runner(id, active_thread)
+			err := utils.RunnerWrap(runner, id, active_thread)
 			if err != nil {
 				TotalFailedReq += 1
 			} else{
@@ -121,7 +55,7 @@ func (c *Consumer) CommonConsume(RPS int, runner ConsumerFunction, Batches int, 
 			}
 		}(j)
 		c.wg.Done()
-		time.Sleep(time.Microsecond * 15)
+		time.Sleep(time.Microsecond * 25)
 	}
 	Endtime := time.Since(startTime)
 	AverageTimeForBatch += Endtime

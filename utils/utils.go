@@ -3,10 +3,12 @@ package utils
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 )
+type RunnerFunction func()(error) 
 
 func GetPath(URL, sub string) string{
 	return URL + sub
@@ -77,4 +79,33 @@ func SendTime(T float64, path string){
 	 }
 	 sb := string(body)
 	 log.Println(sb)
+}
+
+func PointerRunnerWrap(runner RunnerFunction ,i ...*int64)(error){
+	var buffer bytes.Buffer
+	buffer.WriteString("Making request: ")
+	for _, val := range i {
+		buffer.WriteString(fmt.Sprintf("%d ", *val))
+	}
+	log.Print(buffer.String())
+	err := runner()
+    *i[0]++
+    if err != nil {
+		return err
+	}
+    return nil
+}
+
+func RunnerWrap(runner RunnerFunction ,i ...int)(error){
+	var buffer bytes.Buffer
+	buffer.WriteString("Making request: ")
+	for _, val := range i {
+		buffer.WriteString(fmt.Sprintf("%d ", val))
+	}
+	log.Print(buffer.String())
+	err := runner()
+    if err != nil {
+		return err
+	}
+    return nil
 }

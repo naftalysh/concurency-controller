@@ -12,7 +12,23 @@ import (
 
 	consumer "github.com/redhat-appstudio-qe/concurency-controller/consumer"
 	producer "github.com/redhat-appstudio-qe/concurency-controller/producer"
+	"github.com/redhat-appstudio-qe/concurency-controller/utils"
 )
+
+var (
+	ResultsArray []Results
+	StopTicker chan struct{}
+	
+)
+
+
+type Results struct {
+	Latency time.Duration
+	RPS int
+	TotalRequests int
+	TotalErrors int
+
+}
 
 type LoadController struct{
 	MaxReq, Batches, RPS, maxRPS int
@@ -21,8 +37,9 @@ type LoadController struct{
 	timeout time.Duration
 	sendMetrics bool
 	monitoringURL string
+	Results *Results
 }
-type Runner func(...int)(error)
+type Runner func()(error)
 
 func divide(M int, B int) int {
 	if M < 1 || B < 1 {
@@ -30,6 +47,10 @@ func divide(M int, B int) int {
 	}
 	return M / B
 
+}
+
+func NewResults() *Results {
+	return &Results{Latency: time.Duration(0), RPS: 0, TotalErrors: 0, TotalRequests: 0}
 }
 
 // NewConsumer creates a Consumer
@@ -41,11 +62,13 @@ func NewInfiniteLoadController(timeout time.Duration, RPS int, MonitoringURL str
 	return &LoadController{timeout: timeout, RPS: RPS, monitoringURL: MonitoringURL}
 }
 
-func NewSpikeLoadController(timeout time.Duration, maxRPS int, errorThreshold float64, MonitoringURL string) *LoadController {
+func NewSpikeLoadController(timeout time.Duration, maxRPS int, errorThreshold float64,MonitoringURL string) *LoadController {
 	return &LoadController{timeout: timeout, monitoringURL: MonitoringURL, maxRPS: maxRPS, errorThreshold: errorThreshold}
 }
 
 func (l *LoadController) initialize(infinite bool){
+	l.Results = NewResults();
+	StopTicker = make(chan struct{})
 	l.sendMetrics = false;
 
 	if flag.Lookup("cpuprofile") == nil && flag.Lookup("memprofile") == nil && flag.Lookup("monitoringURL") == nil{
@@ -89,7 +112,8 @@ func (l *LoadController) initialize(infinite bool){
 
 func (l *LoadController) finish(){
 
-
+	//stop gathering metrics 
+	close(StopTicker)
 
 	// Memory Profile
 	if *l.memprofile != "" {
@@ -104,9 +128,10 @@ func (l *LoadController) finish(){
 		f.Close()
 	}
 
+
 }
 
-func (l *LoadController) ExecuteInfinite(runner consumer.ConsumerFunction){
+func (l *LoadController) ExecuteInfinite(runner utils.RunnerFunction){
 	l.initialize(true)
 	// start metrics
 	var active = make(chan int)  // channel to send messages
@@ -124,7 +149,7 @@ func (l *LoadController) ExecuteInfinite(runner consumer.ConsumerFunction){
 }
 
 
-func  (l *LoadController) ConcurentlyExecute(runner consumer.ConsumerFunction){
+func  (l *LoadController) ConcurentlyExecute(runner utils.RunnerFunction){
 	
 	l.initialize(false)
 
@@ -144,9 +169,34 @@ func  (l *LoadController) ConcurentlyExecute(runner consumer.ConsumerFunction){
 
 }
 
-func  (l *LoadController) CuncurentSpikeExecutor(runner RunnerFunction){
-	l.initialize(true)
-	l.ExecuteSpike(runner)
-	l.finish()
+func  (l *LoadController) CuncurentSpikeExecutor(runner utils.RunnerFunction) []Results {
 	
+	l.initialize(true)
+	SaveMetricsOnTick(l.Results)
+	l.ExecuteSpike(runner)
+	SaveMetrics(l.Results)
+	l.finish()
+	return ResultsArray
+	
+}
+
+func SaveMetricsOnTick(R *Results){
+	ticker := time.NewTicker(1 * time.Second)
+	go func() {
+		for {
+		   select {
+			case <- ticker.C:
+				SaveMetrics(R)
+			case <- StopTicker:
+				ticker.Stop()
+				return
+			}
+		}
+	 }()
+
+}
+
+func SaveMetrics(R *Results) ([]Results){
+	ResultsArray = append(ResultsArray, *R)
+	return ResultsArray
 }

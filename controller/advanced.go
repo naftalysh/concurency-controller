@@ -6,14 +6,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/redhat-appstudio-qe/concurency-controller/utils"
 )
 
 var counter int64
 
 
-type RunnerFunction func(*int64)(error)
 
-func (l LoadController) ExecuteSpike(testFunction RunnerFunction) {
+
+func (l LoadController) ExecuteSpike(testFunction utils.RunnerFunction) {
     var (
         wg sync.WaitGroup
         start = time.Now()
@@ -41,6 +42,10 @@ func (l LoadController) ExecuteSpike(testFunction RunnerFunction) {
             fmt.Printf("Average Latency: %v\n", totalLatency / time.Duration(totalRequests))
             fmt.Printf("Max Latency: %v\n", maxLatency)
             fmt.Printf("Min Latency: %v\n", minLatency)
+			l.Results.Latency = totalLatency / time.Duration(totalRequests)
+			l.Results.RPS = rps
+			l.Results.TotalRequests = totalRequests
+			l.Results.TotalErrors = errorCount
             return
         default:
             wg.Add(1)
@@ -48,7 +53,7 @@ func (l LoadController) ExecuteSpike(testFunction RunnerFunction) {
             go func() {
                 defer wg.Done()
                 start := time.Now() // added this line
-                if err := testFunction(&counter); err != nil {
+                if err := utils.PointerRunnerWrap(testFunction, &counter); err != nil {
                     errorCount++
                 }
                 totalRequests++
@@ -61,6 +66,7 @@ func (l LoadController) ExecuteSpike(testFunction RunnerFunction) {
                     minLatency = latency // added this line
                 }
             }()
+			//l.Results.Latency = totalLatency / time.Duration(totalRequests)
         }
 
         if totalRequests%rps == 0 {
@@ -68,6 +74,12 @@ func (l LoadController) ExecuteSpike(testFunction RunnerFunction) {
             duration := time.Since(start) // added this line
 			counter = 0
             fmt.Printf("RPS: %d\n", int(float64(rps)/duration.Seconds())) // added this line
+			l.Results.RPS = rps
+			l.Results.TotalRequests = totalRequests
+			l.Results.TotalErrors = errorCount
+			if totalLatency != 0 {
+				l.Results.Latency = totalLatency / time.Duration(totalRequests)
+			}
             errorRate := float64(errorCount) / float64(totalRequests)
             if errorRate > errorThreshold {
                 rps = int(math.Max(float64(rps/2), 1)) // added this line
@@ -82,3 +94,4 @@ func (l LoadController) ExecuteSpike(testFunction RunnerFunction) {
         wg.Wait()
 	}
 }
+
