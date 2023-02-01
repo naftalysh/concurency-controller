@@ -1,15 +1,13 @@
 package producer
 
 import (
-	"time"
 	"log"
-	"github.com/redhat-appstudio-qe/concurency-controller/utils"
+	"time"
 )
 
-// Producer definition
 type Producer struct {
-	active *chan int
-	done *chan bool
+	Active *chan int
+	Done *chan bool
 }
 
 var (
@@ -18,40 +16,34 @@ var (
 
 // NewProducer creates a Producer
 func NewProducer(active *chan int, done *chan bool) *Producer {
-	return &Producer{active: active, done: done}
+	return &Producer{Active: active, Done: done}
 }
 
-func (p *Producer) ProduceInfinite(timeout time.Duration, monitoringURL string, sendMetrics bool){
+func (p *Producer) ProduceInfinite(timeout time.Duration){
 	log.Println("produce: Started")
 	startTime := time.Now()
 	var i int =0
 	for  start := time.Now(); time.Since(start) < timeout; {
 		log.Println("produce: Sending ", i)
-		*p.active <- i
+		*p.Active <- i
 		time.Sleep(time.Second * 1)
 		i++
 	}
 	TotalTime = time.Since(startTime)
-	if sendMetrics{
-		utils.SendTime(float64(TotalTime) / float64(time.Second),  utils.GetPath(monitoringURL, "updateTime"))
-	}
 	log.Println("produce: Done/ time taken: ", TotalTime)
-	*p.done <- true // signal when done
+	*p.Done <- true // signal when done
 }
 
-func (p *Producer) Produce(max int,  monitoringURL string, sendMetrics bool) {
+func (p *Producer) Produce(max int) {
 	log.Println("produce: Started")
 	startTime := time.Now()
 	for i := 0; i < max; i++ {
 		log.Println("produce: Sending ", i)
-		*p.active <- i
+		*p.Active <- i
 		time.Sleep(time.Second * 1)
 	}
 	TotalTime = time.Since(startTime)
-	if sendMetrics{
-		utils.SendTime(float64(TotalTime) / float64(time.Second),  utils.GetPath(monitoringURL, "updateTime"))
-	}
 	log.Println("produce: Done/ time taken: ", TotalTime)
-	*p.done <- true // signal when done
+	*p.Done <- true // signal when done
 	
 }

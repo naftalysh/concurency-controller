@@ -3,27 +3,52 @@ package utils
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"time"
+
 )
-type RunnerFunction func()(error) 
+
+var (
+	PushMetricsPath string = "/pushMetrics"
+	HealthCheckPath string = "/"
+)
+
+type UtilsType struct{
+	ExporterURL string
+}
+
+func NewUtils(ExporterURL string) *UtilsType {
+	return &UtilsType{ExporterURL: ExporterURL}
+}
 
 func GetPath(URL, sub string) string{
 	return URL + sub
 }
 
-func SendMetrics(T float64, S float64, F float64, path string){
+func (u UtilsType) CheckExporterConnection(){
+	resp, err := http.Get(GetPath(u.ExporterURL, HealthCheckPath))
+	if err != nil {
+		log.Fatalf("An Error Occured %v", err)
+	}
+	log.Println("Connect to Metrics Exporter status: ", resp.StatusCode)
+	if resp.StatusCode != 200 {
+		log.Fatalf("An unknown error occured")
+	}
+}
+
+func (u UtilsType) SendMetrics(Total int, Failed int, Latency time.Duration, RPS int){
 	
 	postBody, _ := json.Marshal(map[string]float64{
-		"total":  T,
-		"failed": F,
-		"success": S,
+		"total":  float64(Total),
+		"failed": float64(Failed),
+		"latency": float64(Latency/time.Microsecond),
+		"RPS": float64(RPS),
 	 })
 	 responseBody := bytes.NewBuffer(postBody)
   	//Leverage Go's HTTP Post function to make request
-	 resp, err := http.Post(path, "application/json", responseBody)
+	 resp, err := http.Post(GetPath(u.ExporterURL, PushMetricsPath), "application/json", responseBody)
   	//Handle Error
 	 if err != nil {
 		log.Fatalf("An Error Occured %v", err)
@@ -36,76 +61,4 @@ func SendMetrics(T float64, S float64, F float64, path string){
 	 }
 	 sb := string(body)
 	 log.Println(sb)
-}
-
-func SendTotal(T float64, path string){
-	
-	postBody, _ := json.Marshal(map[string]float64{
-		"totalReq":  T,
-	 })
-	 responseBody := bytes.NewBuffer(postBody)
-  	//Leverage Go's HTTP Post function to make request
-	 resp, err := http.Post(path, "application/json", responseBody)
-  	//Handle Error
-	 if err != nil {
-		log.Fatalf("An Error Occured %v", err)
-	 }
-	 defer resp.Body.Close()
-  	//Read the response body
-	 body, err := io.ReadAll(resp.Body)
-	 if err != nil {
-		log.Fatalln(err)
-	 }
-	 sb := string(body)
-	 log.Println(sb)
-}
-
-func SendTime(T float64, path string){
-	postBody, _ := json.Marshal(map[string]float64{
-		"time":  T,
-	 })
-	 responseBody := bytes.NewBuffer(postBody)
-  	//Leverage Go's HTTP Post function to make request
-	 resp, err := http.Post(path, "application/json", responseBody)
-  	//Handle Error
-	 if err != nil {
-		log.Fatalf("An Error Occured %v", err)
-	 }
-	 defer resp.Body.Close()
-  	//Read the response body
-	 body, err := io.ReadAll(resp.Body)
-	 if err != nil {
-		log.Fatalln(err)
-	 }
-	 sb := string(body)
-	 log.Println(sb)
-}
-
-func PointerRunnerWrap(runner RunnerFunction ,i ...*int64)(error){
-	var buffer bytes.Buffer
-	buffer.WriteString("Making request: ")
-	for _, val := range i {
-		buffer.WriteString(fmt.Sprintf("%d ", *val))
-	}
-	log.Print(buffer.String())
-	err := runner()
-    *i[0]++
-    if err != nil {
-		return err
-	}
-    return nil
-}
-
-func RunnerWrap(runner RunnerFunction ,i ...int)(error){
-	var buffer bytes.Buffer
-	buffer.WriteString("Making request: ")
-	for _, val := range i {
-		buffer.WriteString(fmt.Sprintf("%d ", val))
-	}
-	log.Print(buffer.String())
-	err := runner()
-    if err != nil {
-		return err
-	}
-    return nil
 }

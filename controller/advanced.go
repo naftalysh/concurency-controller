@@ -1,12 +1,12 @@
 package controller
 
 import (
-	"fmt"
+	"log"
 	"math"
 	"sync"
 	"time"
 
-	"github.com/redhat-appstudio-qe/concurency-controller/utils"
+	typesdef "github.com/redhat-appstudio-qe/concurency-controller/typesDef"
 )
 
 var counter int64
@@ -14,7 +14,7 @@ var counter int64
 
 
 
-func (l LoadController) ExecuteSpike(testFunction utils.RunnerFunction) {
+func (l LoadController) ExecuteSpike(testFunction typesdef.RunnerFunction) {
     var (
         wg sync.WaitGroup
         start = time.Now()
@@ -26,6 +26,7 @@ func (l LoadController) ExecuteSpike(testFunction utils.RunnerFunction) {
         totalLatency time.Duration
         maxLatency time.Duration
         minLatency time.Duration = time.Hour
+		successCount = 0
     )
     // specify the timeout duration here
     timeout := l.timeout
@@ -35,17 +36,12 @@ func (l LoadController) ExecuteSpike(testFunction utils.RunnerFunction) {
     for {
         select {
         case <-timer.C:
-            fmt.Printf("Test timed out after %v\n", timeout)
-            fmt.Printf("Total requests made: %d\n", totalRequests)
-            fmt.Printf("Requests per second: %d\n", rps)
-            fmt.Printf("Error count: %d\n", errorCount)
-            fmt.Printf("Average Latency: %v\n", totalLatency / time.Duration(totalRequests))
-            fmt.Printf("Max Latency: %v\n", maxLatency)
-            fmt.Printf("Min Latency: %v\n", minLatency)
-			l.Results.Latency = totalLatency / time.Duration(totalRequests)
-			l.Results.RPS = rps
-			l.Results.TotalRequests = totalRequests
-			l.Results.TotalErrors = errorCount
+            log.Printf("Test timed out after %v\n", timeout)
+            log.Printf("Total requests made: %d\n", totalRequests)
+            log.Printf("Error count: %d\n", errorCount)
+            log.Printf("Average Latency: %v\n", totalLatency / time.Duration(totalRequests))
+            log.Printf("Max Latency: %v\n", maxLatency)
+            log.Printf("Min Latency: %v\n", minLatency)
             return
         default:
             wg.Add(1)
@@ -53,7 +49,7 @@ func (l LoadController) ExecuteSpike(testFunction utils.RunnerFunction) {
             go func() {
                 defer wg.Done()
                 start := time.Now() // added this line
-                if err := utils.PointerRunnerWrap(testFunction, &counter); err != nil {
+                if err := typesdef.PointerRunnerWrap(testFunction, &counter); err != nil {
                     errorCount++
                 }
                 totalRequests++
@@ -71,10 +67,10 @@ func (l LoadController) ExecuteSpike(testFunction utils.RunnerFunction) {
 
         if totalRequests%rps == 0 {
             time.Sleep(time.Second) // added this line to wait 1 sec
-            duration := time.Since(start) // added this line
+            duration := time.Since(start)
 			counter = 0
-            fmt.Printf("RPS: %d\n", int(float64(rps)/duration.Seconds())) // added this line
-			l.Results.RPS = rps
+            log.Printf("RPS: %d\n", int(float64(rps)/duration.Seconds())) // added this line
+			l.Results.RPS = int(float64(rps)/duration.Seconds())
 			l.Results.TotalRequests = totalRequests
 			l.Results.TotalErrors = errorCount
 			if totalLatency != 0 {
@@ -85,10 +81,16 @@ func (l LoadController) ExecuteSpike(testFunction utils.RunnerFunction) {
                 rps = int(math.Max(float64(rps/2), 1)) // added this line
                 errorCount = 0
 				//break // added this line
+            } else {
+                successCount++
+                if successCount == 10 {
+                    successCount = 0
+                    rps = int(math.Min(float64(rps*2), float64(maxRPS)))
+                }
             }
-            if rps < maxRPS {
-                rps = int(math.Min(float64(rps*2), float64(maxRPS)))
-            }
+            // if rps < maxRPS {
+            //     rps = int(math.Min(float64(rps*int(increaseRate)), float64(maxRPS)))
+            // }
             start = time.Now()
         }
         wg.Wait()

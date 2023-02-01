@@ -1,9 +1,9 @@
 package main
 
 import (
-	//"log"
+	"log"
 	"testing"
-	// "time"
+	"time"
 
 	controller "github.com/redhat-appstudio-qe/concurency-controller/controller"
 )
@@ -23,10 +23,10 @@ func TestController(t *testing.T){
 	// if you want to capture/send metrics please  provide the third parameter i.e MonitoringURL
 	// Monitoring URL should point to hosted/self hosted instance of https://github.com/redhat-appstudio-qe/perf-monitoring
 	// if you dont want to push metrics then just pass an empty string
-	MAX_REQ := 500
-	BATCHES := 10
-	controller.NewLoadController(MAX_REQ,BATCHES, "").ConcurentlyExecute(testFunction)
-
+	/* MAX_REQ := 50
+	BATCHES := 5
+	r := controller.NewLoadController(MAX_REQ,BATCHES, "http://localhost:8000").ConcurentlyExecute(testFunction)
+	log.Println(r) */
 
 
 	// Execute infinitely untill a timeout is met 
@@ -34,10 +34,10 @@ func TestController(t *testing.T){
 	// if you want to capture/send metrics please  provide the third parameter i.e MonitoringURL
 	// Monitoring URL should point to hosted/self hosted instance of https://github.com/redhat-appstudio-qe/perf-monitoring
 	// if you dont want to push metrics then just pass an empty string
-	/* TIMEOUT := 10 * time.Second
-	RPS := 5
-	controller.NewInfiniteLoadController(TIMEOUT, RPS, "").ExecuteInfinite(testFunction)
- 	*/
+	/* TIMEOUT := 60 * time.Second
+	RPS := 3
+	r := controller.NewInfiniteLoadController(TIMEOUT, RPS, "http://localhost:8000").ConcurentlyExecuteInfinite(testFunction)
+	log.Println(r) */
 
 
 	// Executes infinitely untill a timeout is met 
@@ -47,11 +47,11 @@ func TestController(t *testing.T){
 	// if you want to capture/send metrics please  provide the third parameter i.e MonitoringURL
 	// Monitoring URL should point to hosted/self hosted instance of https://github.com/redhat-appstudio-qe/perf-monitoring
 	// if you dont want to push metrics then just pass an empty string
-	/* TIMEOUT := 5 * time.Second
-	maxRPS := 30
+	TIMEOUT := 60 * time.Second
+	maxRPS := 50
 	errorThresholdRate := 0.5
-	r := controller.NewSpikeLoadController(TIMEOUT, maxRPS, errorThresholdRate, "").CuncurentSpikeExecutor(testFunction)
-	log.Println(r) */
+	r := controller.NewSpikeLoadController(TIMEOUT, maxRPS, errorThresholdRate, "http://localhost:8000").CuncurentlyExecuteSpike(testFunction)
+	log.Println(r)
 }
 
 

@@ -5,77 +5,76 @@ import (
 	"sync"
 	"time"
 
-	"github.com/redhat-appstudio-qe/concurency-controller/utils"
+	"github.com/redhat-appstudio-qe/concurency-controller/typesDef"
 )
 
 type Consumer struct {
-	active *chan int
-	wg sync.WaitGroup
+	Active *chan int
+	Results *typesdef.Results
+	Wg sync.WaitGroup
 }
 
+
 var (
-	AverageTimeForBatch time.Duration
+	AverageTimeForBatch  time.Duration
 	TotalReq int = 0
-	TotalPassedReq int = 0
 	TotalFailedReq int = 0
 )
 
 // NewConsumer creates a Consumer
-func NewConsumer(active *chan int) *Consumer {
-	TotalReq, TotalFailedReq, TotalPassedReq = 0 , 0, 0
-	return &Consumer{active: active}
+func NewConsumer(active *chan int, results *typesdef.Results) *Consumer {
+	TotalReq, TotalFailedReq = 0, 0
+	return &Consumer{Active: active, Results: results}
 }
 
 // consume reads the msgs channel
-func (c *Consumer) Consume(RPS int, runner utils.RunnerFunction, Batches int,  monitoringURL string, sendMetrics bool) {
-	c.wg = sync.WaitGroup{}
+func (c *Consumer) Consume(RPS int, runner typesdef.RunnerFunction , Batches int,  monitoringURL string, sendMetrics bool) {
+	c.Wg = sync.WaitGroup{}
 	log.Println("consume: Started")
 	for {
-		t := c.CommonConsume(RPS, runner, Batches, monitoringURL, sendMetrics)
-		if sendMetrics{
-			utils.SendTotal(float64(t), utils.GetPath(monitoringURL,"updateTotal"))
-		}
+		c.CommonConsume(RPS, runner, Batches, monitoringURL, sendMetrics)
 	}
 }
 
 
-func (c *Consumer) CommonConsume(RPS int, runner utils.RunnerFunction , Batches int,  monitoringURL string, sendMetrics bool) int {
-	active_thread := <-*c.active
+func (c *Consumer) CommonConsume(RPS int, runner typesdef.RunnerFunction , Batches int,  monitoringURL string, sendMetrics bool) {
+	active_thread := <-*c.Active
 	log.Println("consume: Received:", active_thread)
 	startTime := time.Now()
 	for j := 0; j<RPS; j++ {
-		c.wg.Add(1)
+		c.Wg.Add(1)
 		go func(id int){
 			TotalReq += 1
-			err := utils.RunnerWrap(runner, id, active_thread)
+			err := typesdef.RunnerWrap(runner, id, active_thread)
 			if err != nil {
 				TotalFailedReq += 1
-			} else{
-				TotalPassedReq += 1
 			}
 		}(j)
-		c.wg.Done()
+		c.Wg.Done()
 		time.Sleep(time.Microsecond * 25)
 	}
 	Endtime := time.Since(startTime)
 	AverageTimeForBatch += Endtime
-	c.wg.Wait()
-	metricsPrinter(active_thread,Batches,Endtime,AverageTimeForBatch,TotalReq,TotalPassedReq,TotalFailedReq,monitoringURL, sendMetrics)
-	return TotalReq
+	c.Wg.Wait()
+	c.Results.TotalRequests = TotalReq
+	c.Results.TotalErrors = TotalFailedReq
+	c.Results.RPS = RPS
+	if AverageTimeForBatch != 0{
+		c.Results.Latency = AverageTimeForBatch / time.Duration(TotalReq)
+	}
+	log.Println(c.Results)
+	metricsPrinter(active_thread,Batches,Endtime,AverageTimeForBatch,TotalReq,TotalFailedReq,monitoringURL, sendMetrics)
 }
 
 func metricsPrinter(active_thread int, 
 	Batches int, Endtime time.Duration, 
 	AverageTimeForBatch time.Duration, 
-	TotalReq int, TotalPassedReq int, 
+	TotalReq int, 
 	TotalFailedReq int, monitoringURL string ,sendMetrics bool){
 	log.Println("Total Time taken for this batch: ", Endtime)
-	log.Println("Avg time taken by this batch: ", AverageTimeForBatch)
+	log.Println("Latency: ", AverageTimeForBatch / time.Duration(TotalReq))
 	log.Println("Requests Counter: ", TotalReq)
-	log.Println("Successful Requests Counter: ", TotalPassedReq)
+	log.Println("Successful Requests Counter: ", TotalReq - TotalFailedReq)
 	log.Println("Failed Requests Counter: ", TotalFailedReq)
-	if sendMetrics{
-		utils.SendMetrics(float64(TotalReq), float64(TotalPassedReq), float64(TotalFailedReq), utils.GetPath(monitoringURL,"addBatchWise"))
-		utils.SendTime(float64(AverageTimeForBatch) / float64(time.Millisecond),  utils.GetPath(monitoringURL,"updateAvgTime"))
-	}
+	
 }
