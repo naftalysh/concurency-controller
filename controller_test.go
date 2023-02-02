@@ -25,7 +25,7 @@ func TestController(t *testing.T){
 	// if you dont want to push metrics then just pass an empty string
 	MAX_REQ := 50
 	BATCHES := 5
-	result := controller.NewLoadController(MAX_REQ,BATCHES, "http://localhost:8000").ConcurentlyExecute(testFunction)
+	result := controller.NewLoadController(MAX_REQ,BATCHES, "").ConcurentlyExecute(testFunction)
 	log.Println("Result Array: ", result)
 
 

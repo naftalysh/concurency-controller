@@ -1,6 +1,8 @@
 
 # Concurency Controller
 
+[![Go](https://github.com/redhat-appstudio-qe/concurency-controller/actions/workflows/go.yml/badge.svg?branch=main)](https://github.com/redhat-appstudio-qe/concurency-controller/actions/workflows/go.yml)
+
 **The "concurency-controller" is a Go based concurrent requests controller, consisting of three controllers: Load Controller, Infinite Load Controller, and Spike Load Controller.**
 
 - The **Load Controller** takes two arguments: `MAX_REQ` (the number of requests to be made) and `BATCHES` (the number of threads to execute). **The `RPS` is calculated by dividing `MAX_REQ` by `BATCHES` and the controller makes a number of concurrent requests each second equal to the RPS, until `MAX_REQ` has been made.**
