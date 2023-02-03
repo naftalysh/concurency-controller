@@ -56,7 +56,7 @@ func NewInfiniteLoadController(timeout time.Duration, RPS int, MonitoringURL str
 
 // `NewSpikeLoadController` creates a new `LoadController` with the given `timeout`, `maxRPS`,
 // `errorThreshold` and `MonitoringURL`
-func NewSpikeLoadController(timeout time.Duration, maxRPS int, errorThreshold float64,MonitoringURL string) *LoadController {
+func NewSpikeLoadController(timeout time.Duration, maxRPS int, errorThreshold float64, MonitoringURL string) *LoadController {
 	return &LoadController{timeout: timeout, monitoringURL: MonitoringURL, maxRPS: maxRPS, errorThreshold: errorThreshold}
 }
 
