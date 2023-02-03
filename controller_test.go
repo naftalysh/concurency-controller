@@ -11,8 +11,8 @@ import (
 
 func testFunction() error {
     // Replace this with your actual function to test
-	time.Sleep(time.Second * 15)
-	log.Println("After 15 secs")
+	time.Sleep(time.Second * 5)
+	log.Println("After 5 secs")
     return nil
 }
 

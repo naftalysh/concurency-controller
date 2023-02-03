@@ -2,6 +2,9 @@ package controller
 
 import (
 	"flag"
+	"fmt"
+	"sync"
+
 	//"sync"
 	//"fmt"
 	"log"
@@ -58,6 +61,14 @@ func NewInfiniteLoadController(timeout time.Duration, RPS int, MonitoringURL str
 // `errorThreshold` and `MonitoringURL`
 func NewSpikeLoadController(timeout time.Duration, maxRPS int, errorThreshold float64, MonitoringURL string) *LoadController {
 	return &LoadController{timeout: timeout, monitoringURL: MonitoringURL, maxRPS: maxRPS, errorThreshold: errorThreshold}
+}
+
+func lockUntilAllRoutinesFinish(fn func(int), wg *sync.WaitGroup) {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		fn(1)
+	}()
 }
 
 // Initializing the LoadController struct.
@@ -149,21 +160,39 @@ func (l *LoadController) finish(){
 
 // Defining a function that takes a runner function as an argument and returns a slice of Results.
 func (l *LoadController) ConcurentlyExecuteInfinite(runner typesdef.RunnerFunction) []typesdef.Results {
-	l.initialize(true)
-	// start metrics
-	var active = make(chan int)  // channel to send messages
-	var done = make(chan bool) // channel to control when production is done
 
-	// Start a goroutine for Produce.produce
-	// Start a goroutine for Consumer.consume
-	l.SaveMetricsOnTick(l.Results)
-	go consumer.NewConsumer(&active, l.Results).Consume(l.RPS, runner, l.Batches, l.monitoringURL, l.sendMetrics)
-	go producer.NewProducer(&active, &done).ProduceInfinite(l.timeout)
+	var wg sync.WaitGroup
 
-	// Finish the program when the production is done
-	<-done
+	// A sample function to run in a Go routine
+	sampleFn := func(id int) {
+		// Perform some actions here
+		l.initialize(true)
+		// start metrics
+		var active = make(chan int)  // channel to send messages
+		var done = make(chan bool) // channel to control when production is done
 
-	l.finish()
+		// Start a goroutine for Produce.produce
+		// Start a goroutine for Consumer.consume
+		l.SaveMetricsOnTick(l.Results)
+		go consumer.NewConsumer(&active, l.Results).Consume(l.RPS, runner, l.Batches, l.monitoringURL, l.sendMetrics)
+		go producer.NewProducer(&active, &done).ProduceInfinite(l.timeout)
+
+		// Finish the program when the production is done
+		<-done
+
+		l.finish()
+		fmt.Println("Go routine", id, "has finished executing")
+	}
+
+	// Launch multiple Go routines
+	
+	lockUntilAllRoutinesFinish(sampleFn, &wg)
+	
+
+	// Wait until all Go routines are finished
+	wg.Wait()
+
+	
 	return ResultsArray
 }
 
@@ -171,6 +200,10 @@ func (l *LoadController) ConcurentlyExecuteInfinite(runner typesdef.RunnerFuncti
 // A function that takes a runner function as an argument and returns a slice of Results.
 func  (l *LoadController) ConcurentlyExecute(runner typesdef.RunnerFunction) []typesdef.Results {
 	
+	var wg sync.WaitGroup
+
+	// A sample function to run in a Go routine
+	sampleFn := func(id int) {
 	l.initialize(false)
 
 	// start metrics
@@ -185,8 +218,16 @@ func  (l *LoadController) ConcurentlyExecute(runner typesdef.RunnerFunction) []t
 
 	// Finish the program when the production is done
 	<-done
-
 	l.finish()
+	fmt.Println("Go routine", id, "has finished executing")
+	}
+	lockUntilAllRoutinesFinish(sampleFn, &wg)
+	
+
+	// Wait until all Go routines are finished
+	wg.Wait()
+
+	
 	return ResultsArray
 
 }
@@ -194,12 +235,23 @@ func  (l *LoadController) ConcurentlyExecute(runner typesdef.RunnerFunction) []t
 // A function that takes a runner function as an argument and returns a slice of Results.
 func  (l *LoadController) CuncurentlyExecuteSpike(runner typesdef.RunnerFunction) []typesdef.Results {
 	
+	var wg sync.WaitGroup
+
+	// A sample function to run in a Go routine
+	sampleFn := func(id int) {
 	l.initialize(true)
 	log.Println(l.timeout,l.maxRPS)
 	l.SaveMetricsOnTick(l.Results)
 	l.ExecuteSpike(runner)
 	l.SaveMetrics(l.Results)
 	l.finish()
+	fmt.Println("Go routine", id, "has finished executing")
+	}
+	lockUntilAllRoutinesFinish(sampleFn, &wg)
+
+
+	// Wait until all Go routines are finished
+	wg.Wait()
 	return ResultsArray
 	
 }

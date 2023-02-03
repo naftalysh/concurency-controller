@@ -37,19 +37,33 @@ func (c *Consumer) Consume(RPS int, runner typesdef.RunnerFunction , Batches int
 }
 
 
+func lockUntilAllRoutinesFinish(fn func(), wg *sync.WaitGroup) {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		fn()
+	}()
+}
+
+
 func (c *Consumer) CommonConsume(RPS int, runner typesdef.RunnerFunction , Batches int,  monitoringURL string, sendMetrics bool) {
 	active_thread := <-*c.Active
 	log.Println("consume: Received:", active_thread)
 	startTime := time.Now()
 	for j := 0; j<RPS; j++ {
 		c.Wg.Add(1)
-		go func(id int){
-			TotalReq += 1
-			err := typesdef.RunnerWrap(runner, id, active_thread)
-			if err != nil {
-				TotalFailedReq += 1
-			}
-		}(j)
+		internalWg := sync.WaitGroup{}
+		lockUntilAllRoutinesFinish(
+			func() {
+				go func(id int){
+					TotalReq += 1
+					err := typesdef.RunnerWrap(runner, id, active_thread)
+					if err != nil {
+						TotalFailedReq += 1
+					}
+				}(j)
+			}, &internalWg,
+		)
 		c.Wg.Done()
 		time.Sleep(time.Microsecond * 25)
 	}
