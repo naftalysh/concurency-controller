@@ -195,6 +195,7 @@ func  (l *LoadController) ConcurentlyExecute(runner typesdef.RunnerFunction) []t
 func  (l *LoadController) CuncurentlyExecuteSpike(runner typesdef.RunnerFunction) []typesdef.Results {
 	
 	l.initialize(true)
+	log.Println(l.timeout,l.maxRPS)
 	l.SaveMetricsOnTick(l.Results)
 	l.ExecuteSpike(runner)
 	l.SaveMetrics(l.Results)
