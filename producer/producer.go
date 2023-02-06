@@ -2,48 +2,68 @@ package producer
 
 import (
 	"log"
+	"sync"
 	"time"
 )
 
 type Producer struct {
-	Active *chan int
-	Done *chan bool
+	WG *sync.WaitGroup
+	Messages *chan int
+	timeout time.Duration
+
 }
 
-var (
-	TotalTime time.Duration
-)
+type BatchProducer struct {
+	WG *sync.WaitGroup
+	Messages *chan int
+	Batches int
 
-// NewProducer creates a Producer
-func NewProducer(active *chan int, done *chan bool) *Producer {
-	return &Producer{Active: active, Done: done}
 }
+var TotalTime time.Duration
 
-func (p *Producer) ProduceInfinite(timeout time.Duration){
-	log.Println("produce: Started")
-	startTime := time.Now()
-	var i int =0
-	for  start := time.Now(); time.Since(start) < timeout; {
-		log.Println("produce: Sending ", i)
-		*p.Active <- i
-		time.Sleep(time.Second * 1)
-		i++
+
+func NewProducer(WG *sync.WaitGroup, Messages *chan int, timeout time.Duration) *Producer {
+	return &Producer{
+		WG: WG,
+		Messages: Messages,
+		timeout: timeout,
 	}
-	TotalTime = time.Since(startTime)
-	log.Println("produce: Done/ time taken: ", TotalTime)
-	*p.Done <- true // signal when done
 }
 
-func (p *Producer) Produce(max int) {
-	log.Println("produce: Started")
-	startTime := time.Now()
-	for i := 0; i < max; i++ {
-		log.Println("produce: Sending ", i)
-		*p.Active <- i
-		time.Sleep(time.Second * 1)
+func NewBatchProducer(WG *sync.WaitGroup, Messages *chan int, Batches int) *BatchProducer {
+	return &BatchProducer{
+		WG: WG,
+		Messages: Messages,
+		Batches: Batches,
 	}
-	TotalTime = time.Since(startTime)
-	log.Println("produce: Done/ time taken: ", TotalTime)
-	*p.Done <- true // signal when done
-	
 }
+
+func (p *BatchProducer) Produce() {
+	log.Println("Starting to produce messages")
+	for i := 1; i <= p.Batches; i++ {
+		*p.Messages <- i
+		log.Println("Produced message:", i)
+		time.Sleep(1 * time.Second)
+	}
+	close(*p.Messages)
+	log.Println("Finished producing messages")
+	p.WG.Done()
+}
+
+func (p *Producer) Produce() {
+	log.Println("Starting to produce messages")
+	count := 0
+	for start := time.Now(); time.Since(start) < p.timeout; {
+		*p.Messages <- count
+		log.Println("Produced message:", count)
+		time.Sleep(1 * time.Second)
+		count++
+	}
+	close(*p.Messages)
+	log.Println("Finished producing messages")
+	p.WG.Done()
+}
+
+
+
+

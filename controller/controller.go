@@ -2,19 +2,16 @@ package controller
 
 import (
 	"flag"
-	"fmt"
 	"sync"
-
-	//"sync"
-	//"fmt"
 	"log"
 	"os"
 	"runtime"
 	"runtime/pprof"
 	"time"
 
-	consumer "github.com/redhat-appstudio-qe/concurency-controller/consumer"
-	producer "github.com/redhat-appstudio-qe/concurency-controller/producer"
+	"github.com/redhat-appstudio-qe/concurency-controller/consumer"
+	"github.com/redhat-appstudio-qe/concurency-controller/producer"
+	"github.com/redhat-appstudio-qe/concurency-controller/spiker"
 	typesdef "github.com/redhat-appstudio-qe/concurency-controller/typesDef"
 	"github.com/redhat-appstudio-qe/concurency-controller/utils"
 )
@@ -24,6 +21,33 @@ var (
 	StopTicker chan struct{}
 	
 )
+
+type LoadType struct{
+	cpuprofile, memprofile  *string
+	sendMetrics bool
+	RPS int
+	monitoringURL string
+	Results *typesdef.Results
+	util *utils.UtilsType
+}
+
+type BatchLoadType struct {
+	LoadType
+	MaxReq, Batches int
+}
+
+type InfiniteLoadType struct {
+	LoadType
+	timeout time.Duration
+	RPS int
+}
+
+type SpikeLoadType struct {
+	LoadType
+	timeout time.Duration
+	errorThreshold float64
+	maxRPS int
+}
 
 type LoadController struct{
 	MaxReq, Batches, RPS, maxRPS int
@@ -35,6 +59,7 @@ type LoadController struct{
 	Results *typesdef.Results
 	util *utils.UtilsType
 }
+
 type Runner func()(error)
 
 // Divide takes two integers, M and B, divides them and returns an integer.
@@ -52,27 +77,23 @@ func NewLoadController(MaxReq int, Batches int, MonitoringURL string) *LoadContr
 	return &LoadController{MaxReq: MaxReq, Batches: Batches, monitoringURL: MonitoringURL}
 }
 
-// `NewInfiniteLoadController` creates a new LoadController object with the given timeout, RPS, and MonitoringURL
-func NewInfiniteLoadController(timeout time.Duration, RPS int, MonitoringURL string) *LoadController {
-	return &LoadController{timeout: timeout, RPS: RPS, monitoringURL: MonitoringURL}
+func NewBatchController(MaxReq int, Batches int, MonitoringURL string) *BatchLoadType{
+	LoadTypeVar := LoadType{monitoringURL: MonitoringURL}
+	return &BatchLoadType{LoadType : LoadTypeVar, MaxReq: MaxReq, Batches: Batches}
 }
 
-// `NewSpikeLoadController` creates a new `LoadController` with the given `timeout`, `maxRPS`,
-// `errorThreshold` and `MonitoringURL`
-func NewSpikeLoadController(timeout time.Duration, maxRPS int, errorThreshold float64, MonitoringURL string) *LoadController {
-	return &LoadController{timeout: timeout, monitoringURL: MonitoringURL, maxRPS: maxRPS, errorThreshold: errorThreshold}
+func NewInfiniteController(RPS int, timeout time.Duration, MonitoringURL string) *InfiniteLoadType{
+	LoadTypeVar := LoadType{monitoringURL: MonitoringURL}
+	return &InfiniteLoadType{LoadType : LoadTypeVar, RPS: RPS, timeout: timeout}
 }
 
-func lockUntilAllRoutinesFinish(fn func(int), wg *sync.WaitGroup) {
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		fn(1)
-	}()
+func NewSpikeController(maxRPS int, timeout time.Duration, errorThreshold float64, MonitoringURL string) *SpikeLoadType{
+	LoadTypeVar := LoadType{monitoringURL: MonitoringURL}
+	return &SpikeLoadType{LoadType : LoadTypeVar, maxRPS: maxRPS, timeout: timeout, errorThreshold:  errorThreshold}
 }
 
-// Initializing the LoadController struct.
-func (l *LoadController) initialize(infinite bool){
+
+func(l *LoadType) commonInit() {
 	l.Results = typesdef.NewResults();
 	StopTicker = make(chan struct{})
 	
@@ -98,14 +119,6 @@ func (l *LoadController) initialize(infinite bool){
 
 		time.Sleep(5 * time.Second)
 	}
-
-	
-	if !infinite{
-		l.RPS = divide(l.MaxReq, l.Batches)
-		if l.RPS < 1 {
-			panic("Zero Requests Per Second Detected!")
-		}
-	}
     
 	// utilize the max num of cores available
 	runtime.GOMAXPROCS(runtime.NumCPU())
@@ -125,9 +138,7 @@ func (l *LoadController) initialize(infinite bool){
 
 }
 
-// A function that is called at the end of the program. It stops the ticker, and it writes the memory
-// profile to a file.
-func (l *LoadController) finish(){
+func (l *LoadType) commonfinish(){
 
 	//stop gathering metrics 
 	close(StopTicker)
@@ -158,100 +169,77 @@ func (l *LoadController) finish(){
 	}
 }
 
-// Defining a function that takes a runner function as an argument and returns a slice of Results.
-func (l *LoadController) ConcurentlyExecuteInfinite(runner typesdef.RunnerFunction) []typesdef.Results {
 
-	var wg sync.WaitGroup
-
-	// A sample function to run in a Go routine
-	sampleFn := func(id int) {
-		// Perform some actions here
-		l.initialize(true)
-		// start metrics
-		var active = make(chan int)  // channel to send messages
-		var done = make(chan bool) // channel to control when production is done
-
-		// Start a goroutine for Produce.produce
-		// Start a goroutine for Consumer.consume
-		l.SaveMetricsOnTick(l.Results)
-		go consumer.NewConsumer(&active, l.Results).Consume(l.RPS, runner, l.Batches, l.monitoringURL, l.sendMetrics)
-		go producer.NewProducer(&active, &done).ProduceInfinite(l.timeout)
-
-		// Finish the program when the production is done
-		<-done
-
-		l.finish()
-		fmt.Println("Go routine", id, "has finished executing")
+func (l *BatchLoadType) init(){
+	l.RPS = divide(l.MaxReq, l.Batches)
+	if l.RPS < 1 {
+		panic("Zero Requests Per Second Detected!")
 	}
-
-	// Launch multiple Go routines
-	
-	lockUntilAllRoutinesFinish(sampleFn, &wg)
-	
-
-	// Wait until all Go routines are finished
-	wg.Wait()
-
-	
-	return ResultsArray
 }
 
 
-// A function that takes a runner function as an argument and returns a slice of Results.
-func  (l *LoadController) ConcurentlyExecute(runner typesdef.RunnerFunction) []typesdef.Results {
-	
-	var wg sync.WaitGroup
 
-	// A sample function to run in a Go routine
-	sampleFn := func(id int) {
-	l.initialize(false)
+func (l *InfiniteLoadType) ConcurentlyExecuteInfinite(runner typesdef.RunnerFunction)[]typesdef.Results {
 
-	// start metrics
-	var active = make(chan int)  // channel to send messages
-	var done = make(chan bool) // channel to control when production is done
+	log.Println("Main function started")
+	l.LoadType.commonInit()
 
-	// Start a goroutine for Produce.produce
-	// Start a goroutine for Consumer.consume
+	var wg, wg2 sync.WaitGroup
+	wg.Add(2)
+	messages := make(chan int)
 	l.SaveMetricsOnTick(l.Results)
-	go consumer.NewConsumer(&active, l.Results).Consume(l.RPS, runner, l.Batches, l.monitoringURL, l.sendMetrics)
-	go producer.NewProducer(&active, &done).Produce(l.Batches)
+	go producer.NewProducer(&wg, &messages, l.timeout).Produce()
+	go consumer.NewConsumer(&wg, &wg2, &messages, l.RPS, l.Results).Consume(runner)
 
-	// Finish the program when the production is done
-	<-done
-	l.finish()
-	fmt.Println("Go routine", id, "has finished executing")
-	}
-	lockUntilAllRoutinesFinish(sampleFn, &wg)
-	
-
-	// Wait until all Go routines are finished
+	log.Println("Main function continuing")
 	wg.Wait()
+	wg2.Wait()
+	log.Println("STATS: ", l.Results)
+	log.Println("Main function finished")
 
-	
+
+	l.LoadType.commonfinish()
+
 	return ResultsArray
 
 }
 
 // A function that takes a runner function as an argument and returns a slice of Results.
-func  (l *LoadController) CuncurentlyExecuteSpike(runner typesdef.RunnerFunction) []typesdef.Results {
+func  (l *BatchLoadType) ConcurentlyExecute(runner typesdef.RunnerFunction) []typesdef.Results {
 	
-	var wg sync.WaitGroup
+	log.Println("Main function started")
+	l.LoadType.commonInit()
+	l.init()
 
-	// A sample function to run in a Go routine
-	sampleFn := func(id int) {
-	l.initialize(true)
-	log.Println(l.timeout,l.maxRPS)
+	var wg, wg2 sync.WaitGroup
+	wg.Add(2)
+	messages := make(chan int)
 	l.SaveMetricsOnTick(l.Results)
-	l.ExecuteSpike(runner)
-	l.SaveMetrics(l.Results)
-	l.finish()
-	fmt.Println("Go routine", id, "has finished executing")
-	}
-	lockUntilAllRoutinesFinish(sampleFn, &wg)
+	go producer.NewBatchProducer(&wg, &messages, l.Batches).Produce()
+	go consumer.NewConsumer(&wg, &wg2, &messages, l.RPS, l.Results).Consume(runner)
 
-
-	// Wait until all Go routines are finished
+	log.Println("Main function continuing")
 	wg.Wait()
+	wg2.Wait()
+	log.Println("STATS: ", l.Results)
+	log.Println("Main function finished")
+	l.LoadType.commonfinish()
+
+	return ResultsArray
+
+}
+
+// A function that takes a runner function as an argument and returns a slice of Results.
+func  (l *SpikeLoadType) CuncurentlyExecuteSpike(runner typesdef.RunnerFunction) []typesdef.Results {
+	
+	log.Println("Main function started")
+	l.LoadType.commonInit()
+	l.SaveMetricsOnTick(l.Results)
+	spiker.NewSpiker(l.maxRPS, l.timeout, l.errorThreshold, l.Results).GenerateSpike(runner)
+	log.Println("Main function continuing")
+	l.LoadType.commonfinish()
+	log.Println("Main function finished")
+
 	return ResultsArray
 	
 }
@@ -259,7 +247,7 @@ func  (l *LoadController) CuncurentlyExecuteSpike(runner typesdef.RunnerFunction
 // It creates a new ticker that ticks every second, and then it starts a goroutine that listens for the
 // ticker to tick, and when it does, it calls the SaveMetrics function, and when it receives a message
 // on the StopTicker channel, it stops the ticker and returns
-func (l *LoadController) SaveMetricsOnTick(R *typesdef.Results){
+func (l *LoadType) SaveMetricsOnTick(R *typesdef.Results){
 	ticker := time.NewTicker(1 * time.Second)
 	go func() {
 		for {
@@ -276,7 +264,7 @@ func (l *LoadController) SaveMetricsOnTick(R *typesdef.Results){
 }
 
 // The function takes a pointer to a struct of type Results, and appends it to a slice of type Results
-func (l *LoadController) SaveMetrics(R *typesdef.Results) ([]typesdef.Results){
+func (l *LoadType) SaveMetrics(R *typesdef.Results) ([]typesdef.Results){
 	ResultsArray = append(ResultsArray, *R)
 	if l.sendMetrics{
 		l.util.SendMetrics(R.TotalRequests, R.TotalErrors, R.Latency, R.RPS)

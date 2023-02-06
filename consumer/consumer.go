@@ -5,90 +5,73 @@ import (
 	"sync"
 	"time"
 
-	"github.com/redhat-appstudio-qe/concurency-controller/typesDef"
+	typesdef "github.com/redhat-appstudio-qe/concurency-controller/typesDef"
 )
+
 
 type Consumer struct {
-	Active *chan int
+	WG, WG2 *sync.WaitGroup
 	Results *typesdef.Results
-	Wg sync.WaitGroup
+	Messages *chan int
+	RPS int
 }
-
 
 var (
-	AverageTimeForBatch  time.Duration
-	TotalReq int = 0
-	TotalFailedReq int = 0
+	AverageTimeForBatch time.Duration
+	TotalRequestCopy int
 )
 
-// NewConsumer creates a Consumer
-func NewConsumer(active *chan int, results *typesdef.Results) *Consumer {
-	TotalReq, TotalFailedReq = 0, 0
-	return &Consumer{Active: active, Results: results}
-}
-
-// consume reads the msgs channel
-func (c *Consumer) Consume(RPS int, runner typesdef.RunnerFunction , Batches int,  monitoringURL string, sendMetrics bool) {
-	c.Wg = sync.WaitGroup{}
-	log.Println("consume: Started")
-	for {
-		c.CommonConsume(RPS, runner, Batches, monitoringURL, sendMetrics)
+func NewConsumer(WG *sync.WaitGroup, IWG *sync.WaitGroup, Messages *chan int, RPS int, results *typesdef.Results) *Consumer {
+	return &Consumer{
+		WG: WG,
+		WG2: IWG,
+		Messages: Messages,
+		RPS: RPS,
+		Results: results,
 	}
 }
 
-
-func lockUntilAllRoutinesFinish(fn func(), wg *sync.WaitGroup) {
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		fn()
-	}()
+func (c *Consumer) Consume(runner func()(error)) {
+	log.Println("Starting to consume messages")
+	failed := 0
+	completed := 0
+	total := 0
+	for msg := range *c.Messages {
+		log.Println("Received message:", msg)
+		for i := 0; i < c.RPS; i++ {
+			c.WG2.Add(1)
+			total++
+			TotalRequestCopy = total
+			go c.Test(runner, &failed, &completed,i, msg)
+			time.Sleep(30 * time.Microsecond)
+		}
+	}
+	log.Println("Finished consuming messages")
+	log.Println("Total: ", total)
+	log.Println("Total failed: ", failed)
+	c.Results.RPS = c.RPS
+	c.Results.TotalErrors = failed
+	c.Results.TotalRequests = total
+	c.WG.Done()
 }
 
-
-func (c *Consumer) CommonConsume(RPS int, runner typesdef.RunnerFunction , Batches int,  monitoringURL string, sendMetrics bool) {
-	active_thread := <-*c.Active
-	log.Println("consume: Received:", active_thread)
+func (c *Consumer) Test(runner func()(error), failed *int, completed *int, id int, batch int) (error) {
+	log.Println("Starting test function: ", id, "for batch: ", batch)
 	startTime := time.Now()
-	for j := 0; j<RPS; j++ {
-		c.Wg.Add(1)
-		internalWg := sync.WaitGroup{}
-		lockUntilAllRoutinesFinish(
-			func() {
-				go func(id int){
-					TotalReq += 1
-					err := typesdef.RunnerWrap(runner, id, active_thread)
-					if err != nil {
-						TotalFailedReq += 1
-					}
-				}(j)
-			}, &internalWg,
-		)
-		c.Wg.Done()
-		time.Sleep(time.Microsecond * 25)
+	if err := runner(); err != nil {
+		*failed++
+		c.WG2.Done()
+		return err
 	}
+	log.Println("Test function finished: ", id, "for batch: ", batch)
+	log.Println("Total finished: ", *completed)
 	Endtime := time.Since(startTime)
 	AverageTimeForBatch += Endtime
-	c.Wg.Wait()
-	c.Results.TotalRequests = TotalReq
-	c.Results.TotalErrors = TotalFailedReq
-	c.Results.RPS = RPS
+	*completed++
+	log.Println("Total finished: ", *completed)
 	if AverageTimeForBatch != 0{
-		c.Results.Latency = AverageTimeForBatch / time.Duration(TotalReq)
+		c.Results.Latency = AverageTimeForBatch / time.Duration(TotalRequestCopy)
 	}
-	log.Println(c.Results)
-	metricsPrinter(active_thread,Batches,Endtime,AverageTimeForBatch,TotalReq,TotalFailedReq,monitoringURL, sendMetrics)
-}
-
-func metricsPrinter(active_thread int, 
-	Batches int, Endtime time.Duration, 
-	AverageTimeForBatch time.Duration, 
-	TotalReq int, 
-	TotalFailedReq int, monitoringURL string ,sendMetrics bool){
-	log.Println("Total Time taken for this batch: ", Endtime)
-	log.Println("Latency: ", AverageTimeForBatch / time.Duration(TotalReq))
-	log.Println("Requests Counter: ", TotalReq)
-	log.Println("Successful Requests Counter: ", TotalReq - TotalFailedReq)
-	log.Println("Failed Requests Counter: ", TotalFailedReq)
-	
+	c.WG2.Done()
+	return nil
 }

@@ -5,16 +5,16 @@
 
 **The "concurency-controller" is a Go based concurrent requests controller, consisting of three controllers: Load Controller, Infinite Load Controller, and Spike Load Controller.**
 
-- The **Load Controller** takes two arguments: `MAX_REQ` (the number of requests to be made) and `BATCHES` (the number of threads to execute). **The `RPS` is calculated by dividing `MAX_REQ` by `BATCHES` and the controller makes a number of concurrent requests each second equal to the RPS, until `MAX_REQ` has been made.**
+- The **Batch Controller** takes two arguments: `MAX_REQ` (the number of requests to be made) and `BATCHES` (the number of threads to execute). **The `RPS` is calculated by dividing `MAX_REQ` by `BATCHES` and the controller makes a number of concurrent requests each second equal to the RPS, until `MAX_REQ` has been made.**
 
-- The **Infinite Load Controller** takes two arguments: `timeout` and `RPS`. **It will continuously make concurrent requests based on the set RPS until the timeout is reached.**
+- The **Infinite Controller** takes two arguments: `timeout` and `RPS`. **It will continuously make concurrent requests based on the set RPS until the timeout is reached.**
 
-- The **Spike Load Controller** takes three arguments: `timeout`, `maxRPS`, and `errorThresholdrate`. **It starts making requests based on a minimum `RPS` of 1, and if the previous 10 requests are error-free, it will increase the `RPS by a factor of 2`. If there are errors, the error rate will be checked, and if it crosses the threshold, the RPS will be decremented to the previously worked RPS.**
+- The **Spike Controller** takes three arguments: `timeout`, `maxRPS`, and `errorThresholdrate`. **It starts making requests based on a minimum `RPS` of 1, and if the previous 10 requests are error-free, it will increase the `RPS by a factor of 2`. If there are errors, the error rate will be checked, and if it crosses the threshold, the RPS will be decremented to the previously worked RPS.**
 
 - Each of the three controllers in the "concurency-controller" repo also takes an optional argument, which is the URL for a running instance of [perf-monitoring](https://github.com/redhat-appstudio-qe/perf-monitoring), a part of the monitoring stack that ingests the metrics captured by these three controllers. If you do not want to use the monitoring, simply leave the argument as an empty string.
 
 
-**Each of the controllers has its own functions for execution, i.e  `ConcurrentlyExecute` for LoadController, `ConcurrentlyExecuteInfinite` for InfiniteLoadController, and `ConcurrentlyExecuteSpike` for SpikeLoadController.** These functions return a result array of type `Results`, which is a struct that contains the following fields:
+**Each of the controllers has its own functions for execution, i.e  `ConcurrentlyExecute` for BatchController, `ConcurrentlyExecuteInfinite` for InfiniteController, and `ConcurrentlyExecuteSpike` for SpikeController.** These functions return a result array of type `Results`, which is a struct that contains the following fields:
 
 - **Latency**: the time duration of the request
 - **RPS**: the number of requests made per second
@@ -66,7 +66,7 @@ In summary, this function initializes the LoadController struct by setting its f
 
     * pprof.WriteHeapProfile(f): This line writes the heap profile to the file created in step 3. A heap profile shows the memory usage of a Go program at a particular moment in time, including information about the size of allocated objects, the number of objects, and the types of objects.
 
-### LoadController & InfiniteLoadController
+### BatchController & InfiniteController
 
 #### Approach Explanation
 
@@ -79,7 +79,7 @@ In summary, this function initializes the LoadController struct by setting its f
         * The `Produce` method starts a loop that sends messages to the `Active `channel and sleeps for a second before sending the next message. If a `maximum number of iterations` is provided, the loop will stop after reaching that number. If a `timeout`is provided, the loop will continue for the duration of the timeout. After the loop is done, the TotalTime is calculated and a message is sent to the `Done` channel to signal that it is complete.
     * In short, the code creates a concurrency control mechanism using channels and goroutines. The Producer sends messages to the Consumer who processes them and prints metrics. The code demonstrates the use of WaitGroup and channels to control concurrency and communication between Goroutines.
 
-    #### **Execute a LoadTest with LoadController**
+    #### **Execute a LoadTest with BatchController**
 
     ```golang
     package main
@@ -105,13 +105,13 @@ In summary, this function initializes the LoadController struct by setting its f
     func main(){
         MAX_REQ := 50
         BATCHES := 5
-        r := controller.NewLoadController(MAX_REQ,BATCHES, "").ConcurentlyExecute(testFunction)
+        r := controller.NewBatchController(MAX_REQ,BATCHES, "").ConcurentlyExecute(testFunction)
         log.Println(r)
     }
 
     ```
 
-    #### **Execute a LoadTest with InfiniteLoadController**
+    #### **Execute a LoadTest with InfiniteController**
 
     Make the following changes to the above golang code 
 
@@ -121,12 +121,12 @@ In summary, this function initializes the LoadController struct by setting its f
     func main(){
         TIMEOUT := 60 * time.Second
         RPS := 3
-        r := controller.NewInfiniteLoadController(TIMEOUT, RPS, "").ConcurentlyExecuteInfinite(testFunction)
+        r := controller.NewInfiniteController(RPS, TIMEOUT, "").ConcurentlyExecuteInfinite(testFunction)
         log.Println(r)
     }
 
     ```
-### SpikeLoadController
+### SpikeController
 
 #### Approach Explanation
 
@@ -172,7 +172,7 @@ In summary, this function initializes the LoadController struct by setting its f
         TIMEOUT := 60 * time.Second
         maxRPS := 50
         errorThresholdRate := 0.5
-        r := controller.NewSpikeLoadController(TIMEOUT, maxRPS, errorThresholdRate, "").CuncurentlyExecuteSpike(testFunction)
+        r := controller.NewSpikeController(maxRPS, TIMEOUT, errorThresholdRate, "").CuncurentlyExecuteSpike(testFunction)
         log.Println(r)
     }
 

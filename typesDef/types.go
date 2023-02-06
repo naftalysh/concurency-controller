@@ -48,7 +48,10 @@ func PointerRunnerWrap(runner RunnerFunction ,i ...*int64)(error){
 	}
 	log.Print(buffer.String())
 	*i[0]++
-	return lockUntilExecutionIsDone(runner, &lock)
+	if err := lockUntilExecutionIsDone(runner, &lock); err != nil {
+		return err
+	}
+	return nil
 }
 
 func RunnerWrap(runner RunnerFunction ,i ...int)(error){
