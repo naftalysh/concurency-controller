@@ -38,12 +38,17 @@ func (u UtilsType) CheckExporterConnection(){
 	}
 }
 
+func durationToFloat64(d time.Duration) float64 {
+	return float64(d.Nanoseconds()) / float64(time.Second)
+}
+
+
 func (u UtilsType) SendMetrics(Total int, Failed int, Latency time.Duration, RPS int){
 	
 	postBody, _ := json.Marshal(map[string]float64{
 		"total":  float64(Total),
 		"failed": float64(Failed),
-		"latency": float64(Latency/time.Microsecond),
+		"latency": durationToFloat64(Latency),
 		"RPS": float64(RPS),
 	 })
 	 responseBody := bytes.NewBuffer(postBody)

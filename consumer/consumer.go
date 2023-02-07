@@ -38,10 +38,11 @@ func (c *Consumer) Consume(runner func()(error)) {
 	total := 0
 	for msg := range *c.Messages {
 		log.Println("Received message:", msg)
+		c.Results.RPS = c.RPS
 		for i := 0; i < c.RPS; i++ {
 			c.WG2.Add(1)
 			total++
-			TotalRequestCopy = total
+			c.Results.TotalRequests = total
 			go c.Test(runner, &failed, &completed,i, msg)
 			time.Sleep(30 * time.Microsecond)
 		}
@@ -49,8 +50,6 @@ func (c *Consumer) Consume(runner func()(error)) {
 	log.Println("Finished consuming messages")
 	log.Println("Total: ", total)
 	log.Println("Total failed: ", failed)
-	c.Results.RPS = c.RPS
-	c.Results.TotalErrors = failed
 	c.Results.TotalRequests = total
 	c.WG.Done()
 }
@@ -60,6 +59,7 @@ func (c *Consumer) Test(runner func()(error), failed *int, completed *int, id in
 	startTime := time.Now()
 	if err := runner(); err != nil {
 		*failed++
+		c.Results.TotalErrors = *failed
 		c.WG2.Done()
 		return err
 	}
@@ -70,7 +70,7 @@ func (c *Consumer) Test(runner func()(error), failed *int, completed *int, id in
 	*completed++
 	log.Println("Total finished: ", *completed)
 	if AverageTimeForBatch != 0{
-		c.Results.Latency = AverageTimeForBatch / time.Duration(TotalRequestCopy)
+		c.Results.Latency = AverageTimeForBatch / time.Duration(*completed)
 	}
 	c.WG2.Done()
 	return nil

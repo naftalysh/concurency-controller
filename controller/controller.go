@@ -163,6 +163,7 @@ func (l *LoadType) commonfinish(){
 
 	//reset necessary metrics 
 	if l.sendMetrics{
+		time.Sleep(5 * time.Second)
 		l.Results.RPS = 0 
 		l.Results.Latency = 0
 		l.SaveMetrics(l.Results)
